@@ -2,91 +2,575 @@
 <html lang="zh-Hant">
 <head>
   <meta charset="UTF-8" />
-  <title>投資紀錄管理 UI</title>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <title>雙標的投資帳戶追蹤</title>
   <style>
-    body { font-family: sans-serif; margin: 20px; }
-    .section { margin-bottom: 32px; padding: 16px; border: 1px solid #ccc; border-radius: 12px; }
-    table, th, td { border: 1px solid #aaa; border-collapse: collapse; padding: 6px; }
+    body { font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 20px; background:#f5f5f7; color:#222; }
+    h1 { font-size: 24px; margin-bottom: 10px; }
+    h2 { font-size: 18px; margin: 20px 0 10px; }
+    .card {
+      background: #fff;
+      border-radius: 10px;
+      padding: 16px 20px;
+      margin-bottom: 16px;
+      box-shadow: 0 4px 10px rgba(15,23,42,0.08);
+    }
+    .flex { display:flex; gap:16px; flex-wrap:wrap; }
+    .flex > .col { flex:1 1 260px; }
+    label { display:block; margin:6px 0 2px; font-size:13px; color:#555; }
+    input, select {
+      width:100%; box-sizing:border-box;
+      padding:6px 8px; border-radius:6px;
+      border:1px solid #d0d7e2; font-size:14px;
+    }
+    input:focus, select:focus {
+      outline:none; border-color:#2563eb;
+      box-shadow:0 0 0 1px rgba(37,99,235,0.3);
+    }
+    button {
+      padding:8px 14px; border-radius:20px;
+      border:none; cursor:pointer; font-size:14px;
+      background:#2563eb; color:#fff;
+      box-shadow:0 3px 8px rgba(37,99,235,0.35);
+    }
+    button.secondary { background:#e5e7eb; color:#111827; box-shadow:none; }
+    button:disabled { background:#9ca3af; box-shadow:none; cursor:not-allowed; }
+    table { width:100%; border-collapse:collapse; font-size:13px; margin-top:8px; }
+    th, td { padding:4px 6px; border-bottom:1px solid #e5e7eb; text-align:right; }
+    th:first-child, td:first-child { text-align:left; }
+    thead { background:#f3f4f6; }
+    .tag {
+      display:inline-flex; align-items:center;
+      padding:2px 8px; border-radius:999px;
+      font-size:11px; font-weight:500;
+    }
+    .tag-00675L { background:#eff6ff; color:#1d4ed8; }
+    .tag-00720B { background:#ecfdf3; color:#15803d; }
+    .tag-div { background:#fef3c7; color:#92400e; }
+    .summary-grid {
+      display:grid;
+      grid-template-columns:repeat(auto-fit,minmax(180px,1fr));
+      gap:10px;
+    }
+    .summary-item {
+      background:#f9fafb;
+      border-radius:8px;
+      padding:8px 10px;
+      border:1px solid #e5e7eb;
+      font-size:13px;
+    }
+    .summary-item b { display:block; font-size:12px; color:#6b7280; margin-bottom:4px; }
+    .summary-item span { font-size:14px; }
+    .pill-group { display:flex; flex-wrap:wrap; gap:6px; margin-top:4px; }
+    .pill {
+      font-size:11px; padding:3px 8px;
+      border-radius:999px; background:#eef2ff; color:#3730a3;
+    }
+    .csv-preview {
+      font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      font-size:12px; padding:6px 8px;
+      background:#0f172a; color:#e5e7eb;
+      border-radius:6px; margin-top:6px;
+      white-space:pre; overflow-x:auto;
+    }
+    .small-hint { font-size:12px; color:#6b7280; }
+    canvas { max-height:320px; }
   </style>
 </head>
 <body>
-  <h2>投資紀錄管理介面</h2>
+  <h1>雙標的投資帳戶追蹤（00675L / 00720B）</h1>
 
-  <div class="section">
-    <h3>投資摘要</h3>
-    <p>已投入金額：<span id="invested"></span></p>
-    <p>資產現況：<span id="currentAsset"></span></p>
+  <!-- 上方：CSV 載入與現價輸入 -->
+  <div class="card">
+    <h2>1. 載入歷史紀錄 & 輸入現價</h2>
+    <div class="flex">
+      <div class="col">
+        <label>載入 data/invest.csv（或手動選檔）</label>
+        <div class="pill-group">
+          <button id="load-default">載入 data/invest.csv</button>
+          <input type="file" id="file-input" accept=".csv" />
+        </div>
+        <p class="small-hint">說明：CSV 結構須為<br>
+          日期,價格,股數(張),金額,價格,股數(張),金額,配息<br>
+          左三欄=富邦加權正2 (00675L)，右三欄=元大投資級公司債 (00720B)，配息只填最後一欄。
+        </p>
+      </div>
+      <div class="col">
+        <label>富邦加權正2 (00675L) 目前股價</label>
+        <input type="number" id="price-00675L" step="0.01" placeholder="例如 120">
+        <label>元大投資級公司債 (00720B) 目前股價</label>
+        <input type="number" id="price-00720B" step="0.01" placeholder="例如 33.5">
+        <p class="small-hint">輸入現價後會即時計算目前市值與報酬率。</p>
+      </div>
+    </div>
   </div>
 
-  <div class="section">
-    <h3>資產 / 報酬率 走勢</h3>
-    <canvas id="chart" height="120"></canvas>
+  <!-- 中段：輸入介面 -->
+  <div class="card">
+    <h2>2. 新增交易（之後都用這裡，不再手動改 CSV）</h2>
+    <div class="flex">
+      <div class="col">
+        <label>日期</label>
+        <input type="date" id="trade-date">
+
+        <label>標的</label>
+        <select id="trade-symbol">
+          <option value="00675L">富邦加權正2 (00675L)</option>
+          <option value="00720B">元大投資級公司債 (00720B)</option>
+        </select>
+
+        <label>類型</label>
+        <select id="trade-type">
+          <option value="buy">買進</option>
+          <option value="sell">賣出</option>
+          <option value="dividend">配息（僅 00720B）</option>
+        </select>
+      </div>
+
+      <div class="col">
+        <label>價格（配息可留空）</label>
+        <input type="number" id="trade-price" step="0.01">
+
+        <label>股數（張；配息填 0 或留空）</label>
+        <input type="number" id="trade-shares" step="1">
+
+        <label>金額（含手續費、稅）</label>
+        <input type="number" id="trade-amount" step="1">
+
+        <div style="margin-top:8px; display:flex; gap:8px; flex-wrap:wrap;">
+          <button id="btn-add">新增交易</button>
+          <button id="btn-clear-added" class="secondary">清除本機新增紀錄</button>
+        </div>
+        <p class="small-hint">
+          新增後會：加入內部紀錄、更新統計與圖表，並產生一行符合 CSV 規則的文字，方便你貼回 data/invest.csv。
+        </p>
+      </div>
+    </div>
+
+    <div style="margin-top:10px;">
+      <b>對應 CSV 一行文字（貼到 data/invest.csv 最末列）：</b>
+      <div id="csv-line" class="csv-preview">(尚未產生)</div>
+    </div>
   </div>
 
-  <div class="section">
-    <h3>交易紀錄</h3>
-    <table id="table"></table>
+  <!-- 下段：統計 + 圖表 + 明細 -->
+  <div class="card">
+    <h2>3. 資產統計</h2>
+    <div class="summary-grid" id="summary-grid">
+      <!-- 動態填入 -->
+    </div>
   </div>
 
-  <div class="section">
-    <h3>資產 / 報酬率 走勢</h3>
-    <canvas id="chart" height="120"></canvas>
+  <div class="card">
+    <h2>4. 資產與報酬率走勢</h2>
+    <p class="small-hint">以每個交易日為節點，採用當日持股與當前輸入的現價估算；實務上若要真實歷史曲線，可再接日線價格資料。</p>
+    anvas id="chart-equity"></canvas>
   </div>
 
-<script>
-const csvUrl = "https://github.com/bradyluo/00675L-tracking/blob/main/data/invest.csv";
-let rows = [];
+  <div class="card">
+    <h2>5. 全部交易明細</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>日期</th>
+          <th>標的</th>
+          <th>類型</th>
+          <th>價格</th>
+          <th>張數</th>
+          <th>金額</th>
+        </tr>
+      </thead>
+      <tbody id="tx-tbody"></tbody>
+    </table>
+  </div>
 
-async function loadCSV() {
-  const t = document.getElementById("table");
-  const res = await fetch(csvUrl);
-  const txt = await res.text();
-  rows = txt.trim().split("\n").map(r => r.split(","));
-  renderTable();
-  updateSummary();
-  renderChart();
-}
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script>
+    // 內部資料結構
+    let baseTransactions = [];   // CSV 讀入
+    let addedTransactions = [];  // 使用者後續新增（存在 localStorage）
 
-function renderTable() {
-  const t = document.getElementById("table");
-  t.innerHTML = rows.map(r => `<tr>${r.map(c => `<td>${c}</td>`).join("")}</tr>`).join("");
-}
+    // 交易物件格式：
+    // { date: 'YYYY/MM/DD', symbol:'00675L'|'00720B', type:'buy'|'sell'|'dividend', price:number|null, shares:number, amount:number }
 
-function addRecord() {
-  const d = date.value;
-  const s = symbol.value;
-  const p = price.value;
-  const sh = shares.value;
-  const a = amount.value;
-  if (!d) return alert("日期必填");
+    function parseCsv(text) {
+      baseTransactions = [];
+      const lines = text.split(/\\r?\\n/).map(l => l.trim()).filter(l => l);
+      if (lines.length <= 1) return;
+      const header = lines[0].split(",");
+      // 之後每一行：日期, 價格L, 股數L, 金額L, 價格B, 股數B, 金額B, 配息
+      for (let i = 1; i < lines.length; i++) {
+        const row = lines[i].split(",");
+        if (row.length < 8) continue;
+        const date = row[0].trim();
+        if (!date) continue;
+        const priceL = row[1] ? Number(row[1].replace(/[$"]/g, "")) : null;
+        const sharesL = row[2] ? Number(row[2].replace(/[$"]/g, "")) : null;
+        const amtL   = row[3] ? Number(row[3].replace(/[$",]/g, "")) : null;
+        const priceB = row[4] ? Number(row[4].replace(/[$"]/g, "")) : null;
+        const sharesB= row[5] ? Number(row[5].replace(/[$"]/g, "")) : null;
+        const amtB   = row[6] ? Number(row[6].replace(/[$",]/g, "")) : null;
+        const div    = row[7] ? Number(row[7].replace(/[$",]/g, "")) : null;
 
-  rows.push([d, s, p, sh, a]);
-  renderTable();
-  alert("已加入：請記得手動 commit 到 GitHub");
-}
+        // 00675L 買賣
+        if (sharesL && amtL) {
+          baseTransactions.push({
+            date,
+            symbol: "00675L",
+            type: sharesL > 0 ? "buy" : "sell",
+            price: priceL,
+            shares: sharesL,
+            amount: amtL
+          });
+        }
 
-function updateSummary() {
-  const invested = rows.reduce((t, r) => t + Number(r[4] || 0), 0);
-  document.getElementById("invested").textContent = invested.toFixed(2);
-  document.getElementById("currentAsset").textContent = invested.toFixed(2);
-}
+        // 00720B 買賣
+        if (sharesB && amtB) {
+          baseTransactions.push({
+            date,
+            symbol: "00720B",
+            type: sharesB > 0 ? "buy" : "sell",
+            price: priceB,
+            shares: sharesB,
+            amount: amtB
+          });
+        }
 
-function renderChart() {
-  const labels = rows.map(r => r[0]);
-  const asset = rows.map((_, i) => rows.slice(0, i+1).reduce((x, y) => x + Number(y[4]||0), 0));
+        // 00720B 配息
+        if (div) {
+          baseTransactions.push({
+            date,
+            symbol: "00720B",
+            type: "dividend",
+            price: null,
+            shares: 0,
+            amount: div
+          });
+        }
+      }
+    }
 
-  new Chart(document.getElementById("chart"), {
-    type: 'line',
-    data: { labels, datasets: [{ label: '資產變化', data: asset }] },
-  });
-}
+    // localStorage
+    const STORAGE_KEY = "invest_app_added_tx_v1";
 
-loadCSV();
-</script>
+    function saveAddedToStorage() {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(addedTransactions));
+    }
+    function loadAddedFromStorage() {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return;
+      try {
+        addedTransactions = JSON.parse(raw) || [];
+      } catch (e) {
+        addedTransactions = [];
+      }
+    }
+
+    // CSV 一行輸出（依你目前規則）
+    function buildCsvLine(tx) {
+      const d = tx.date.replace(/-/g, "/");
+      let cols = ["", "", "", "", "", "", "", ""];
+      cols[0] = d;
+      if (tx.symbol === "00675L" && tx.type !== "dividend") {
+        cols[1] = tx.price ?? "";
+        cols[2] = tx.shares ?? "";
+        cols[3] = tx.amount ?? "";
+      } else if (tx.symbol === "00720B" && tx.type !== "dividend") {
+        cols[4] = tx.price ?? "";
+        cols[5] = tx.shares ?? "";
+        cols[6] = tx.amount ?? "";
+      } else if (tx.symbol === "00720B" && tx.type === "dividend") {
+        cols[7] = tx.amount ?? "";
+      }
+      return cols.join(",");
+    }
+
+    // 統計與圖表資料
+    let chartObj = null;
+
+    function recalcAndRender() {
+      const all = [...baseTransactions, ...addedTransactions];
+      all.sort((a,b) => a.date.localeCompare(b.date));
+
+      const price00675L = Number(document.getElementById("price-00675L").value || "0");
+      const price00720B = Number(document.getElementById("price-00720B").value || "0");
+
+      let pos = {
+        "00675L": { shares:0, cost:0 },
+        "00720B": { shares:0, cost:0, div:0 }
+      };
+
+      // 走勢資料
+      let dates = [];
+      let equitySeries = [];
+      let returnSeries = [];
+
+      // 累積投入（含兩標的買賣金額但不含配息）
+      let totalNetInvest = 0;
+
+      // 以「交易日」為節點，逐日累積
+      let lastDate = null;
+      for (const tx of all) {
+        // 更新部位
+        if (tx.symbol === "00675L") {
+          if (tx.type === "buy" || tx.type === "sell") {
+            pos["00675L"].shares += tx.shares;
+            pos["00675L"].cost   += tx.amount;  // 你原始 CSV 金額欄位已含正負
+            totalNetInvest       += tx.amount;
+          }
+        } else if (tx.symbol === "00720B") {
+          if (tx.type === "buy" || tx.type === "sell") {
+            pos["00720B"].shares += tx.shares;
+            pos["00720B"].cost   += tx.amount;
+            totalNetInvest       += tx.amount;
+          } else if (tx.type === "dividend") {
+            pos["00720B"].div    += tx.amount;
+          }
+        }
+
+        lastDate = tx.date;
+
+        // 每筆交易視為一個節點
+        const mv00675L = pos["00675L"].shares * price00675L;
+        const mv00720B = pos["00720B"].shares * price00720B;
+        const totalEquity = mv00675L + mv00720B + pos["00720B"].div;
+        const invested = totalNetInvest; // 含賣出為負
+        const totalReturn = invested !== 0 ? (totalEquity - invested) / Math.abs(invested) : 0;
+
+        dates.push(lastDate);
+        equitySeries.push(totalEquity);
+        returnSeries.push(totalReturn * 100);
+      }
+
+      // 摘要
+      const mv00675L = pos["00675L"].shares * price00675L;
+      const mv00720B = pos["00720B"].shares * price00720B;
+      const totalInvested = totalNetInvest;
+      const totalEquity = mv00675L + mv00720B + pos["00720B"].div;
+      const totalGain = totalEquity - totalInvested;
+      const totalRoi = totalInvested !== 0 ? (totalGain / Math.abs(totalInvested)) * 100 : 0;
+
+      renderSummary(pos, {
+        price00675L, price00720B,
+        mv00675L, mv00720B,
+        totalInvested, totalEquity, totalGain, totalRoi
+      });
+
+      renderTable(all);
+
+      renderChart(dates, equitySeries, returnSeries);
+    }
+
+    function formatMoney(v) {
+      if (!isFinite(v)) return "-";
+      return v.toLocaleString("zh-TW", { minimumFractionDigits:0, maximumFractionDigits:0 });
+    }
+
+    function renderSummary(pos, m) {
+      const g = document.getElementById("summary-grid");
+      const pL = pos["00675L"];
+      const pB = pos["00720B"];
+
+      const roiL = pL.cost !== 0 && m.price00675L
+        ? ((pL.shares * m.price00675L - pL.cost) / Math.abs(pL.cost)) * 100
+        : 0;
+      const roiB = pB.cost !== 0 && m.price00720B
+        ? ((pB.shares * m.price00720B + pB.div - pB.cost) / Math.abs(pB.cost)) * 100
+        : 0;
+
+      g.innerHTML = `
+        <div class="summary-item">
+          <b>00675L 部位</b>
+          <span>持有 ${pL.shares} 張，成本 ${formatMoney(pL.cost)}，市值 ${formatMoney(m.mv00675L)}</span><br>
+          <span>報酬率：約 ${roiL.toFixed(2)}%</span>
+        </div>
+        <div class="summary-item">
+          <b>00720B 部位</b>
+          <span>持有 ${pB.shares} 張，成本 ${formatMoney(pB.cost)}，市值 ${formatMoney(m.mv00720B)}</span><br>
+          <span>累計配息：${formatMoney(pB.div)}，報酬率：約 ${roiB.toFixed(2)}%</span>
+        </div>
+        <div class="summary-item">
+          <b>整體帳戶</b>
+          <span>淨投入：${formatMoney(m.totalInvested)}，總資產（含配息）：${formatMoney(m.totalEquity)}</span><br>
+          <span>總損益：${formatMoney(m.totalGain)}，總報酬率：約 ${m.totalRoi.toFixed(2)}%</span>
+        </div>
+      `;
+    }
+
+    function renderTable(all) {
+      const tbody = document.getElementById("tx-tbody");
+      tbody.innerHTML = "";
+      for (const tx of all) {
+        const tr = document.createElement("tr");
+        const tagSym = tx.symbol === "00675L"
+          ? '<span class="tag tag-00675L">00675L</span>'
+          : '<span class="tag tag-00720B">00720B</span>';
+        const tagType = tx.type === "dividend"
+          ? '<span class="tag tag-div">配息</span>'
+          : (tx.type === "buy"
+              ? '<span class="tag tag-00675L">買進</span>'
+              : '<span class="tag tag-00720B">賣出</span>');
+        tr.innerHTML = `
+          <td>${tx.date}</td>
+          <td>${tagSym}</td>
+          <td>${tagType}</td>
+          <td>${tx.price != null ? tx.price : "-"}</td>
+          <td>${tx.shares}</td>
+          <td>${tx.amount}</td>
+        `;
+        tbody.appendChild(tr);
+      }
+    }
+
+    function renderChart(dates, equitySeries, returnSeries) {
+      const ctx = document.getElementById("chart-equity").getContext("2d");
+      if (chartObj) {
+        chartObj.data.labels = dates;
+        chartObj.data.datasets[0].data = equitySeries;
+        chartObj.data.datasets[1].data = returnSeries;
+        chartObj.update();
+        return;
+      }
+      chartObj = new Chart(ctx, {
+        type: "line",
+        data: {
+          labels: dates,
+          datasets: [
+            {
+              label: "總資產（含配息）",
+              data: equitySeries,
+              borderColor: "#2563eb",
+              backgroundColor: "rgba(37,99,235,0.15)",
+              yAxisID: "y",
+              tension: 0.2,
+              pointRadius: 2
+            },
+            {
+              label: "總報酬率 (%)",
+              data: returnSeries,
+              borderColor: "#f97316",
+              backgroundColor: "rgba(249,115,22,0.15)",
+              yAxisID: "y1",
+              tension: 0.2,
+              pointRadius: 2
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          interaction: { mode: "index", intersect: false },
+          stacked: false,
+          plugins: {
+            legend: { position: "bottom" }
+          },
+          scales: {
+            y: {
+              type: "linear",
+              display: true,
+              position: "left",
+              title: { display: true, text: "資產金額" }
+            },
+            y1: {
+              type: "linear",
+              display: true,
+              position: "right",
+              grid: { drawOnChartArea: false },
+              title: { display: true, text: "報酬率 (%)" }
+            }
+          }
+        }
+      });
+    }
+
+    // 事件綁定
+    document.getElementById("file-input").addEventListener("change", (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        parseCsv(ev.target.result);
+        recalcAndRender();
+      };
+      reader.readAsText(file, "utf-8");
+    });
+
+    // 嘗試用 fetch 讀 data/invest.csv（若部署在同一網站且允許）
+    document.getElementById("load-default").addEventListener("click", async () => {
+      try {
+        const resp = await fetch("data/invest.csv?ts=" + Date.now());
+        if (!resp.ok) {
+          alert("讀取 data/invest.csv 失敗，請確認路徑或改用手動選檔。");
+          return;
+        }
+        const text = await resp.text();
+        parseCsv(text);
+        recalcAndRender();
+      } catch (e) {
+        alert("無法載入 data/invest.csv，請改用檔案選擇。");
+      }
+    });
+
+    // 新增交易
+    document.getElementById("btn-add").addEventListener("click", () => {
+      const date = document.getElementById("trade-date").value;
+      const symbol = document.getElementById("trade-symbol").value;
+      const type = document.getElementById("trade-type").value;
+      const priceRaw = document.getElementById("trade-price").value;
+      const sharesRaw = document.getElementById("trade-shares").value;
+      const amountRaw = document.getElementById("trade-amount").value;
+
+      if (!date) {
+        alert("請先選擇日期");
+        return;
+      }
+      if (type === "dividend" && symbol !== "00720B") {
+        alert("配息僅適用於 00720B");
+        return;
+      }
+      if (!amountRaw) {
+        alert("請輸入金額（配息金額或買/賣成交金額）");
+        return;
+      }
+
+      const tx = {
+        date: date.replace(/-/g, "/"),
+        symbol,
+        type,
+        price: priceRaw ? Number(priceRaw) : null,
+        shares: sharesRaw ? Number(sharesRaw) : 0,
+        amount: Number(amountRaw)
+      };
+
+      if ((type === "buy" || type === "sell") && !tx.shares) {
+        alert("買/賣請填寫張數");
+        return;
+      }
+
+      addedTransactions.push(tx);
+      saveAddedToStorage();
+
+      const line = buildCsvLine(tx);
+      document.getElementById("csv-line").textContent = line;
+
+      recalcAndRender();
+    });
+
+    document.getElementById("btn-clear-added").addEventListener("click", () => {
+      if (!confirm("確定要清除本機新增紀錄？這不會影響原 CSV 檔。")) return;
+      addedTransactions = [];
+      saveAddedToStorage();
+      document.getElementById("csv-line").textContent = "(尚未產生)";
+      recalcAndRender();
+    });
+
+    document.getElementById("price-00675L").addEventListener("input", recalcAndRender);
+    document.getElementById("price-00720B").addEventListener("input", recalcAndRender);
+
+    window.addEventListener("DOMContentLoaded", () => {
+      loadAddedFromStorage();
+      recalcAndRender();
+    });
+  </script>
 </body>
 </html>
 
-</body>
-</html>
 
