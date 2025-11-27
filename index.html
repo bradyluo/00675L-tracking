@@ -1,122 +1,103 @@
 <!DOCTYPE html>
-<html lang="zh-TW">
+<html lang="zh">
 <head>
   <meta charset="UTF-8" />
-  <title>投資策略追蹤 App</title>
+  <title>投資紀錄儀表板</title>
   <style>
-    body { font-family: Arial, sans-serif; max-width: 900px; margin: auto; padding: 20px; }
-    nav { margin-bottom: 20px; }
-    nav button { margin-right: 10px; padding: 8px 15px; }
-    section { display: none; }
-    section.active { display: block; }
-    label, select, input { display: block; margin: 10px 0 5px; }
-    table { width: 100%; border-collapse: collapse; margin-top: 15px; }
-    th, td { border: 1px solid #ccc; padding: 8px; text-align: center; }
-    #summary { margin-top: 20px; }
+    body { font-family: sans-serif; margin: 20px; }
+    table { border-collapse: collapse; width: 100%; margin-top: 20px; }
+    table, td, th { border: 1px solid #ccc; }
+    td, th { padding: 8px; }
+    input { margin-right: 8px; }
   </style>
 </head>
 <body>
-  <h1>投資策略追蹤 App</h1>
-  <nav>
-    <button onclick="showPage('record')">買賣記錄</button>
-    <button onclick="showPage('stats')">投報率統計</button>
-    <button onclick="showPage('tech')">技術分析</button>
-  </nav>
 
-  <section id="record" class="active">
-    <h2>買賣記錄</h2>
-    <form id="tradeForm">
-      <label for="tradeDate">日期</label>
-      <input type="date" id="tradeDate" required />
-      <label for="tradeType">買/賣</label>
-      <select id="tradeType" required>
-        <option value="">請選擇</option>
-        <option value="buy">買入</option>
-        <option value="sell">賣出</option>
-      </select>
-      <label for="symbol">標的</label>
-      <input type="text" id="symbol" placeholder="輸入股票代號" required />
-      <label for="shares">股數</label>
-      <input type="number" id="shares" min="1" required />
-      <button type="submit">新增記錄</button>
-    </form>
+<h2>投資紀錄儀表板</h2>
 
-    <h3>買賣列表</h3>
-    <table id="tradeTable">
-      <thead>
-        <tr><th>日期</th><th>類型</th><th>標的</th><th>股數</th></tr>
-      </thead>
-      <tbody></tbody>
-    </table>
-  </section>
+<button id="loadCsvBtn">讀取 CSV</button>
+<button id="downloadCsvBtn" disabled>下載更新後的 CSV</button>
 
-  <section id="stats">
-    <h2>投報率統計</h2>
-    <div id="summary">尚無資料</div>
-  </section>
+<table id="dataTable"></table>
 
-  <section id="tech">
-    <h2>技術分析</h2>
-    <p>可整合外部API或自行開發圖表，示意內容略。</p>
-  </section>
+<h3>新增紀錄</h3>
+<div>
+  <input id="dateInput" type="date" />
+  <input id="typeInput" placeholder="買/賣" />
+  <input id="symbolInput" placeholder="股票代號" />
+  <input id="priceInput" type="number" step="0.01" placeholder="價格" />
+  <input id="sharesInput" type="number" step="1" placeholder="股數" />
+  <button id="addBtn">新增</button>
+</div>
 
-  <script>
-    const tradeForm = document.getElementById('tradeForm');
-    const tradeTableBody = document.querySelector('#tradeTable tbody');
-    const summaryDiv = document.getElementById('summary');
-    let trades = [];
+<script>
+  const CSV_URL = "https://raw.githubusercontent.com/<你的帳號>/<你的Repo>/main/data/invest.csv";
 
-    // 切換分頁
-    function showPage(pageId) {
-      document.querySelectorAll('section').forEach(sec => sec.classList.remove('active'));
-      document.getElementById(pageId).classList.add('active');
-      if(pageId === 'stats') calculateStats();
-    }
+  let tableData = [];
 
-    // 新增買賣記錄
-    tradeForm.addEventListener('submit', e => {
-      e.preventDefault();
-      const date = tradeForm.tradeDate.value;
-      const type = tradeForm.tradeType.value;
-      const symbol = tradeForm.symbol.value.toUpperCase();
-      const shares = Number(tradeForm.shares.value);
+  // 將 CSV 轉成陣列
+  function parseCSV(text) {
+    return text.trim().split("\n").map(row => row.split(","));
+  }
 
-      trades.push({ date, type, symbol, shares });
-      updateTradeTable();
-      tradeForm.reset();
+  // 將陣列轉回 CSV
+  function toCSV(rows) {
+    return rows.map(r => r.join(",")).join("\n");
+  }
+
+  // 渲染表格
+  function renderTable() {
+    const table = document.getElementById("dataTable");
+    table.innerHTML = "";
+
+    tableData.forEach((row, idx) => {
+      const tr = document.createElement("tr");
+      row.forEach(cell => {
+        const td = document.createElement(idx === 0 ? "th" : "td");
+        td.textContent = cell;
+        tr.appendChild(td);
+      });
+      table.appendChild(tr);
     });
+    document.getElementById("downloadCsvBtn").disabled = false;
+  }
 
-    // 更新記錄列表呈現
-    function updateTradeTable() {
-      tradeTableBody.innerHTML = '';
-      trades.forEach(trade => {
-        const row = document.createElement('tr');
-        row.innerHTML = `<td>${trade.date}</td><td>${trade.type}</td><td>${trade.symbol}</td><td>${trade.shares}</td>`;
-        tradeTableBody.appendChild(row);
-      });
+  // 讀取 CSV
+  document.getElementById("loadCsvBtn").onclick = async () => {
+    const res = await fetch(CSV_URL);
+    const text = await res.text();
+    tableData = parseCSV(text);
+    renderTable();
+  };
+
+  // 新增紀錄
+  document.getElementById("addBtn").onclick = () => {
+    const date = document.getElementById("dateInput").value;
+    const type = document.getElementById("typeInput").value;
+    const sym  = document.getElementById("symbolInput").value;
+    const price = document.getElementById("priceInput").value;
+    const shares = document.getElementById("sharesInput").value;
+
+    if (!date || !type || !sym || !price || !shares) {
+      alert("資料不完整！");
+      return;
     }
 
-    // 計算並顯示投報率統計
-    function calculateStats() {
-      if(trades.length === 0) {
-        summaryDiv.textContent = '尚無資料';
-        return;
-      }
-      // 簡易累積買入股數計算示意（此處可進一步結合股價資料做投報率計算）
-      let summary = {};
-      trades.forEach(t => {
-        let sign = t.type === 'buy' ? 1 : -1;
-        if (!summary[t.symbol]) summary[t.symbol] = 0;
-        summary[t.symbol] += sign * t.shares;
-      });
+    tableData.push([date, type, sym, price, shares]);
+    renderTable();
+  };
 
-      let html = '<table><thead><tr><th>標的</th><th>淨持股數</th></tr></thead><tbody>';
-      for(let sym in summary) {
-        html += `<tr><td>${sym}</td><td>${summary[sym]}</td></tr>`;
-      }
-      html += '</tbody></table>';
-      summaryDiv.innerHTML = html;
-    }
-  </script>
+  // 下載 CSV
+  document.getElementById("downloadCsvBtn").onclick = () => {
+    const csv = toCSV(tableData);
+    const blob = new Blob([csv], { type: "text/csv" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "invest_updated.csv";
+    a.click();
+  };
+</script>
+
 </body>
 </html>
+
