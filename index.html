@@ -1,103 +1,91 @@
 <!DOCTYPE html>
-<html lang="zh">
+<html lang="zh-Hant">
 <head>
   <meta charset="UTF-8" />
-  <title>投資紀錄儀表板</title>
+  <title>投資紀錄管理 UI</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
     body { font-family: sans-serif; margin: 20px; }
-    table { border-collapse: collapse; width: 100%; margin-top: 20px; }
-    table, td, th { border: 1px solid #ccc; }
-    td, th { padding: 8px; }
-    input { margin-right: 8px; }
+    .section { margin-bottom: 32px; padding: 16px; border: 1px solid #ccc; border-radius: 12px; }
+    table, th, td { border: 1px solid #aaa; border-collapse: collapse; padding: 6px; }
   </style>
 </head>
 <body>
+  <h2>投資紀錄管理介面</h2>
 
-<h2>投資紀錄儀表板</h2>
+  <div class="section">
+    <h3>投資摘要</h3>
+    <p>已投入金額：<span id="invested"></span></p>
+    <p>資產現況：<span id="currentAsset"></span></p>
+  </div>
 
-<button id="loadCsvBtn">讀取 CSV</button>
-<button id="downloadCsvBtn" disabled>下載更新後的 CSV</button>
+  <div class="section">
+    <h3>資產 / 報酬率 走勢</h3>
+    <canvas id="chart" height="120"></canvas>
+  </div>
 
-<table id="dataTable"></table>
+  <div class="section">
+    <h3>交易紀錄</h3>
+    <table id="table"></table>
+  </div>
 
-<h3>新增紀錄</h3>
-<div>
-  <input id="dateInput" type="date" />
-  <input id="typeInput" placeholder="買/賣" />
-  <input id="symbolInput" placeholder="股票代號" />
-  <input id="priceInput" type="number" step="0.01" placeholder="價格" />
-  <input id="sharesInput" type="number" step="1" placeholder="股數" />
-  <button id="addBtn">新增</button>
-</div>
+  <div class="section">
+    <h3>資產 / 報酬率 走勢</h3>
+    <canvas id="chart" height="120"></canvas>
+  </div>
 
 <script>
-  //const CSV_URL = "https://raw.githubusercontent.com/bradyluo/00675L-tracking/main/data/invest.csv";
-  const CSV_URL = "https://github.com/bradyluo/00675L-tracking/blob/main/data/invest.csv";
+const csvUrl = "https://raw.githubusercontent.com/<你的帳號>/<你的repo>/main/data/invest.csv";
+let rows = [];
 
-  let tableData = [];
+async function loadCSV() {
+  const t = document.getElementById("table");
+  const res = await fetch(csvUrl);
+  const txt = await res.text();
+  rows = txt.trim().split("\n").map(r => r.split(","));
+  renderTable();
+  updateSummary();
+  renderChart();
+}
 
-  // 將 CSV 轉成陣列
-  function parseCSV(text) {
-    return text.trim().split("\n").map(row => row.split(","));
-  }
+function renderTable() {
+  const t = document.getElementById("table");
+  t.innerHTML = rows.map(r => `<tr>${r.map(c => `<td>${c}</td>`).join("")}</tr>`).join("");
+}
 
-  // 將陣列轉回 CSV
-  function toCSV(rows) {
-    return rows.map(r => r.join(",")).join("\n");
-  }
+function addRecord() {
+  const d = date.value;
+  const s = symbol.value;
+  const p = price.value;
+  const sh = shares.value;
+  const a = amount.value;
+  if (!d) return alert("日期必填");
 
-  // 渲染表格
-  function renderTable() {
-    const table = document.getElementById("dataTable");
-    table.innerHTML = "";
+  rows.push([d, s, p, sh, a]);
+  renderTable();
+  alert("已加入：請記得手動 commit 到 GitHub");
+}
 
-    tableData.forEach((row, idx) => {
-      const tr = document.createElement("tr");
-      row.forEach(cell => {
-        const td = document.createElement(idx === 0 ? "th" : "td");
-        td.textContent = cell;
-        tr.appendChild(td);
-      });
-      table.appendChild(tr);
-    });
-    document.getElementById("downloadCsvBtn").disabled = false;
-  }
+function updateSummary() {
+  const invested = rows.reduce((t, r) => t + Number(r[4] || 0), 0);
+  document.getElementById("invested").textContent = invested.toFixed(2);
+  document.getElementById("currentAsset").textContent = invested.toFixed(2);
+}
 
-  // 讀取 CSV
-  document.getElementById("loadCsvBtn").onclick = async () => {
-    const res = await fetch(CSV_URL);
-    const text = await res.text();
-    tableData = parseCSV(text);
-    renderTable();
-  };
+function renderChart() {
+  const labels = rows.map(r => r[0]);
+  const asset = rows.map((_, i) => rows.slice(0, i+1).reduce((x, y) => x + Number(y[4]||0), 0));
 
-  // 新增紀錄
-  document.getElementById("addBtn").onclick = () => {
-    const date = document.getElementById("dateInput").value;
-    const type = document.getElementById("typeInput").value;
-    const sym  = document.getElementById("symbolInput").value;
-    const price = document.getElementById("priceInput").value;
-    const shares = document.getElementById("sharesInput").value;
+  new Chart(document.getElementById("chart"), {
+    type: 'line',
+    data: { labels, datasets: [{ label: '資產變化', data: asset }] },
+  });
+}
 
-    if (!date || !type || !sym || !price || !shares) {
-      alert("資料不完整！");
-      return;
-    }
-
-    tableData.push([date, type, sym, price, shares]);
-    renderTable();
-  };
-
-  // 下載 CSV
-  document.getElementById("downloadCsvBtn").onclick = () => {
-    const csv = toCSV(tableData);
-    const blob = new Blob([csv], { type: "text/csv" });
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = "invest_updated.csv";
-    a.click();
-  };
+loadCSV();
 </script>
+</body>
+</html>
 
 </body>
 </html>
