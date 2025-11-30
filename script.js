@@ -1,8 +1,14 @@
+// ============================================
+// 投資帳戶管理工具 - JavaScript
+// ============================================
+
 // 全局變數
 let transactions = [];
 let priceChart = null;
 
+// ============================================
 // 初始化
+// ============================================
 document.addEventListener('DOMContentLoaded', function() {
     // 設定今天的日期為預設值
     const today = new Date().toISOString().split('T'),[object Object],;
@@ -17,6 +23,10 @@ document.addEventListener('DOMContentLoaded', function() {
     // 初始化圖表
     initializeChart();
 });
+
+// ============================================
+// 表單相關函數
+// ============================================
 
 // 更新標的選項
 function updateSecurityOptions() {
@@ -44,26 +54,37 @@ function addTransaction(e) {
         id: Date.now()
     };
 
+    // 驗證輸入
+    if (!transaction.date || !transaction.type || !transaction.security || !transaction.shares || !transaction.price) {
+        alert('請填寫所有必填欄位');
+        return;
+    }
+
     transactions.push(transaction);
     saveRecords();
     displayRecords();
     updateSummary();
+    
+    // 重置表單
     document.getElementById('transactionForm').reset();
-    document.getElementById('date').value = new Date().toISOString().split('T'),[object Object],;
+    document.getElementById('date').value = today = new Date().toISOString().split('T'),[object Object],;
+    
+    alert('交易記錄已新增');
 }
 
-// 刪除交易記錄
-function deleteTransaction(id) {
-    transactions = transactions.filter(t => t.id !== id);
-    saveRecords();
-    displayRecords();
-    updateSummary();
-}
+// ============================================
+// 交易記錄管理
+// ============================================
 
 // 顯示交易記錄
 function displayRecords() {
     const tbody = document.getElementById('recordsBody');
     tbody.innerHTML = '';
+
+    if (transactions.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: #999;">尚無交易記錄</td></tr>';
+        return;
+    }
 
     const sortedTransactions = [...transactions].sort((a, b) => new Date(b.date) - new Date(a.date));
 
@@ -88,11 +109,94 @@ function displayRecords() {
     });
 }
 
+// 刪除交易記錄
+function deleteTransaction(id) {
+    if (confirm('確定要刪除此筆記錄嗎？')) {
+        transactions = transactions.filter(t => t.id !== id);
+        saveRecords();
+        displayRecords();
+        updateSummary();
+    }
+}
+
+// ============================================
+// 本地存儲
+// ============================================
+
+// 保存記錄到本地存儲
+function saveRecords() {
+    localStorage.setItem('investmentRecords', JSON.stringify(transactions));
+}
+
+// 從本地存儲載入記錄
+function loadRecords() {
+    const saved = localStorage.getItem('investmentRecords');
+    if (saved) {
+        try {
+            transactions = JSON.parse(saved);
+            displayRecords();
+            updateSummary();
+        } catch (e) {
+            console.error('載入記錄失敗:', e);
+        }
+    }
+}
+
+// ============================================
+// 摘要計算
+// ============================================
+
 // 更新摘要信息
 function updateSummary() {
     // 計算持倉信息
+    const holdings = calculateHoldings();
+    
+    // 計算配息
+    const totalDividend = calculateDividends();
+    
+    // 計算總投資額
+    let totalInvested = 0;
+    Object.values(holdings).forEach(h => {
+        if (h.shares > 0) {
+            totalInvested += h.totalCost;
+        }
+    });
+
+    // 計算已實現損益
+    const realizedPnL = calculateRealizedPnL(holdings);
+
+    // 當前價格（模擬數據）
+    const currentPrices = {
+        '00675L': 18.5,  // 富邦加權正2
+        '00720B': 98.5   // 元大投資級公司債
+    };
+
+    // 計算未實現損益和當前市值
+    let currentValue = 0;
+    let unrealizedPnL = 0;
+    
+    Object.keys(holdings).forEach(security => {
+        if (holdings[security].shares > 0) {
+            const marketValue = holdings[security].shares * currentPrices[security] * 1000;
+            currentValue += marketValue;
+            unrealizedPnL += marketValue - holdings[security].totalCost;
+        }
+    });
+
+    // 計算總報酬率
+    const totalReturn = totalInvested > 0 ? 
+        ((unrealizedPnL + realizedPnL + totalDividend) / totalInvested * 100) : 0;
+
+    // 更新UI - 摘要卡片
+    updateSummaryCards(totalInvested, currentValue, totalDividend, unrealizedPnL, realizedPnL, totalReturn);
+
+    // 更新持倉明細表
+    updateHoldingsTable(holdings, currentPrices);
+}
+
+// 計算持倉
+function calculateHoldings() {
     const holdings = {};
-    const soldShares = {};
 
     transactions.forEach(t => {
         if (t.type === 'buy') {
@@ -106,76 +210,81 @@ function updateSummary() {
                 holdings[t.security] = { shares: 0, totalCost: 0 };
             }
             holdings[t.security].shares -= t.shares;
-            holdings[t.security].totalCost -= t.shares * t.price * 1000;
-
-            if (!soldShares[t.security]) {
-                soldShares[t.security] = { shares: 0, totalRevenue: 0 };
-            }
-            soldShares[t.security].shares += t.shares;
-            soldShares[t.security].totalRevenue += t.shares * t.price * 1000;
+            
+            // 計算賣出的成本（以平均成本計算）
+            const avgCost = holdings[t.security].totalCost / ((holdings[t.security].shares + t.shares) * 1000);
+            holdings[t.security].totalCost -= t.shares * avgCost * 1000;
         }
     });
 
-    // 計算配息
+    return holdings;
+}
+
+// 計算配息
+function calculateDividends() {
     let totalDividend = 0;
     transactions.forEach(t => {
         if (t.type === 'dividend') {
             totalDividend += t.shares * t.price * 1000;
         }
     });
+    return totalDividend;
+}
 
-    // 計算總投資額
-    let totalInvested = 0;
-    Object.values(holdings).forEach(h => {
-        if (h.shares > 0) {
-            totalInvested += h.totalCost;
-        }
-    });
-
-    // 計算已實現損益
+// 計算已實現損益
+function calculateRealizedPnL(holdings) {
     let realizedPnL = 0;
-    Object.keys(soldShares).forEach(security => {
-        const avgCost = holdings[security] ? holdings[security].totalCost / (holdings[security].shares + soldShares[security].shares) : 0;
-        realizedPnL += soldShares[security].totalRevenue - (soldShares[security].shares * avgCost * 1000);
-    });
+    const soldTransactions = transactions.filter(t => t.type === 'sell');
 
-    // 使用模擬的當前價格（實際應該從API獲取）
-    const currentPrices = {
-        '00675L': 18.5, // 富邦加權正2
-        '00720B': 98.5  // 元大投資級公司債
-    };
-
-    let currentValue = 0;
-    let unrealizedPnL = 0;
-    Object.keys(holdings).forEach(security => {
-        if (holdings[security].shares > 0) {
-            const marketValue = holdings[security].shares * currentPrices[security] * 1000;
-            currentValue += marketValue;
-            unrealizedPnL += marketValue - holdings[security].totalCost;
+    soldTransactions.forEach(sell => {
+        // 找到該證券的買入交易
+        const buyTransactions = transactions.filter(t => t.type === 'buy' && t.security === sell.security && t.date <= sell.date);
+        
+        if (buyTransactions.length > 0) {
+            // 計算平均買入成本
+            let totalBuyShares = 0;
+            let totalBuyCost = 0;
+            
+            buyTransactions.forEach(buy => {
+                totalBuyShares += buy.shares;
+                totalBuyCost += buy.shares * buy.price * 1000;
+            });
+            
+            const avgBuyCost = totalBuyCost / (totalBuyShares * 1000);
+            const sellRevenue = sell.shares * sell.price * 1000;
+            const sellCost = sell.shares * avgBuyCost * 1000;
+            
+            realizedPnL += sellRevenue - sellCost;
         }
     });
 
-    const totalReturn = totalInvested > 0 ? ((unrealizedPnL + realizedPnL + totalDividend) / totalInvested * 100) : 0;
+    return realizedPnL;
+}
 
-    // 更新UI
-    document.getElementById('totalInvested').textContent = `NT$ ${totalInvested.toLocaleString('zh-TW', {minimumFractionDigits: 0, maximumFractionDigits: 0})}`;
-    document.getElementById('currentValue').textContent = `NT$ ${currentValue.toLocaleString('zh-TW', {minimumFractionDigits: 0, maximumFractionDigits: 0})}`;
-    document.getElementById('totalDividend').textContent = `NT$ ${totalDividend.toLocaleString('zh-TW', {minimumFractionDigits: 0, maximumFractionDigits: 0})}`;
+// 更新摘要卡片
+function updateSummaryCards(totalInvested, currentValue, totalDividend, unrealizedPnL, realizedPnL, totalReturn) {
+    document.getElementById('totalInvested').textContent = 
+        `NT$ ${totalInvested.toLocaleString('zh-TW', {minimumFractionDigits: 0, maximumFractionDigits: 0})}`;
     
+    document.getElementById('currentValue').textContent = 
+        `NT$ ${currentValue.toLocaleString('zh-TW', {minimumFractionDigits: 0, maximumFractionDigits: 0})}`;
+    
+    document.getElementById('totalDividend').textContent = 
+        `NT$ ${totalDividend.toLocaleString('zh-TW', {minimumFractionDigits: 0, maximumFractionDigits: 0})}`;
+
     const unrealizedPnLElement = document.getElementById('unrealizedPnL');
-    unrealizedPnLElement.textContent = `NT$ ${unrealizedPnL.toLocaleString('zh-TW', {minimumFractionDigits: 0, maximumFractionDigits: 0})}`;
+    unrealizedPnLElement.textContent = 
+        `NT$ ${unrealizedPnL.toLocaleString('zh-TW', {minimumFractionDigits: 0, maximumFractionDigits: 0})}`;
     unrealizedPnLElement.className = unrealizedPnL >= 0 ? 'positive' : 'negative';
 
     const realizedPnLElement = document.getElementById('realizedPnL');
-    realizedPnLElement.textContent = `NT$ ${realizedPnL.toLocaleString('zh-TW', {minimumFractionDigits: 0, maximumFractionDigits: 0})}`;
+    realizedPnLElement.textContent = 
+        `NT$ ${realizedPnL.toLocaleString('zh-TW', {minimumFractionDigits: 0, maximumFractionDigits: 0})}`;
     realizedPnLElement.className = realizedPnL >= 0 ? 'positive' : 'negative';
 
     const totalReturnElement = document.getElementById('totalReturn');
     totalReturnElement.textContent = `${totalReturn.toFixed(2)}%`;
     totalReturnElement.className = totalReturn >= 0 ? 'positive' : 'negative';
-
-    // 更新持倉明細表
-    updateHoldingsTable(holdings, currentPrices);
 }
 
 // 更新持倉明細表
@@ -209,16 +318,24 @@ function updateHoldingsTable(holdings, currentPrices) {
             `;
         }
     });
+
+    if (tbody.children.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: #999;">暫無持倉</td></tr>';
+    }
 }
 
+// ============================================
+// 圖表相關函數
+// ============================================
+
 // 初始化圖表
-async function initializeChart() {
-    const ctx = document.getElementById('priceChart').getContext('2d');
-    
-    // 模擬歷史數據（2020年至今）
+function initializeChart() {
+    const ctx = document.getElementById('priceChart');
+    if (!ctx) return;
+
     const historicalData = generateHistoricalData();
     
-    priceChart = new Chart(ctx, {
+    priceChart = new Chart(ctx.getContext('2d'), {
         type: 'line',
         data: {
             labels: historicalData.dates,
@@ -230,7 +347,8 @@ async function initializeChart() {
                     backgroundColor: 'rgba(102, 126, 234, 0.1)',
                     tension: 0.1,
                     fill: false,
-                    borderWidth: 2
+                    borderWidth: 2,
+                    pointRadius: 0
                 },
                 {
                     label: 'TAIEX (台灣加權指數)',
@@ -239,7 +357,8 @@ async function initializeChart() {
                     backgroundColor: 'rgba(118, 75, 162, 0.1)',
                     tension: 0.1,
                     fill: false,
-                    borderWidth: 2
+                    borderWidth: 2,
+                    pointRadius: 0
                 },
                 {
                     label: '60MA (00675L)',
@@ -247,7 +366,7 @@ async function initializeChart() {
                     borderColor: '#f39c12',
                     borderDash: [5, 5],
                     fill: false,
-                    borderWidth: 1,
+                    borderWidth: 1.5,
                     pointRadius: 0
                 },
                 {
@@ -256,7 +375,7 @@ async function initializeChart() {
                     borderColor: '#e74c3c',
                     borderDash: [5, 5],
                     fill: false,
-                    borderWidth: 1,
+                    borderWidth: 1.5,
                     pointRadius: 0
                 }
             ]
@@ -267,11 +386,19 @@ async function initializeChart() {
             plugins: {
                 legend: {
                     display: true,
-                    position: 'top'
+                    position: 'top',
+                    labels: {
+                        usePointStyle: true,
+                        padding: 15
+                    }
                 },
                 title: {
                     display: true,
-                    text: '股價歷史走勢及技術分析 (2020年至今)'
+                    text: '股價歷史走勢及技術分析 (2020年至今)',
+                    font: {
+                        size: 16,
+                        weight: 'bold'
+                    }
                 }
             },
             scales: {
@@ -280,6 +407,13 @@ async function initializeChart() {
                     title: {
                         display: true,
                         text: '價格 (NT$)'
+                    }
+                },
+                x: {
+                    display: true,
+                    title: {
+                        display: true,
+                        text: '日期'
                     }
                 }
             }
@@ -301,21 +435,27 @@ function generateHistoricalData() {
     let currentDate = new Date(startDate);
     let basePrice00675L = 10;
     let basePriceTAIEX = 12000;
+    let dayCount = 0;
 
     while (currentDate <= new Date()) {
         // 只添加交易日（跳過週末）
         if (currentDate.getDay() !== 0 && currentDate.getDay() !== 6) {
             dates.push(currentDate.toISOString().split('T'),[object Object],);
             
-            // 模擬價格波動
-            const randomChange00675L = (Math.random() - 0.5) * 0.5;
-            const randomChangeTAIEX = (Math.random() - 0.5) * 100;
+            // 模擬價格波動 - 使用更現實的波動
+            const trend00675L = Math.sin(dayCount / 100) * 0.1;
+            const randomChange00675L = (Math.random() - 0.5) * 0.3 + trend00675L;
+            
+            const trendTAIEX = Math.sin(dayCount / 100) * 50;
+            const randomChangeTAIEX = (Math.random() - 0.5) * 50 + trendTAIEX;
             
             basePrice00675L += randomChange00675L;
             basePriceTAIEX += randomChangeTAIEX;
             
             prices00675L.push(Math.max(basePrice00675L, 5));
             pricesTAIEX.push(Math.max(basePriceTAIEX, 10000));
+            
+            dayCount++;
         }
         
         currentDate.setDate(currentDate.getDate() + 1);
@@ -347,6 +487,20 @@ function generateHistoricalData() {
     };
 }
 
+// 更新圖表顯示
+function updateChart() {
+    const show00675L = document.getElementById('show00675L').checked;
+    const showTWSE = document.getElementById('showTWSE').checked;
+
+    if (priceChart) {
+        priceChart.data.datasets,[object Object],hidden = !show00675L;
+        priceChart.data.datasets,[object Object],hidden = !showTWSE;
+        priceChart.data.datasets,[object Object],hidden = !show00675L;
+        priceChart.data.datasets,[object Object],hidden = !show00675L;
+        priceChart.update();
+    }
+}
+
 // 更新乖離率表
 function updateDivergenceTable(historicalData) {
     const tbody = document.getElementById('divergenceBody');
@@ -365,4 +519,8 @@ function updateDivergenceTable(historicalData) {
         <td>富邦加權正2 (00675L)</td>
         <td>NT$ ${currentPrice00675L.toFixed(2)}</td>
         <td>NT$ ${ma60 ? ma60.toFixed(2) : 'N/A'}</td>
-        <td class="${divergence60 >= 0 ? 'positive' : '
+        <td class="${divergence60 >= 0 ? 'positive' : 'negative'}">${divergence60.toFixed(2)}%</td>
+        <td>NT$ ${ma240 ? ma240.toFixed(2) : 'N/A'}</td>
+        <td class="${divergence240 >= 0 ? 'positive' : 'negative'}">${divergence240.toFixed(2)}%</td>
+    `;
+}
